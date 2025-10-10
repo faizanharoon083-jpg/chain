@@ -1208,7 +1208,7 @@
             marketData: [],
             chatHistory: [],
         };
-    
+        let promptDeferred = null;
         let countdownInterval; // For withdrawal/trade countdown
 
         // =======================================================
@@ -1314,7 +1314,6 @@
 // 3. ENHANCED PWA INSTALLATION LOGIC WITH FULL APP DOWNLOAD AND CUSTOM INSTALL UI
 // =======================================================
 
-let promptDeferred = null;
 let installLoading = false;
 let installCompleted = false;
 
