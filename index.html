@@ -8,7 +8,8 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💱</text></svg>">
 
     <!-- PWA Manifest Link (Generated via JS) -->
-    <link id="pwa-manifest-link" rel="manifest" href="">
+    <link rel="manifest" id="pwa-manifest-link">
+
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -1310,12 +1311,12 @@
             return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
         }
 
-       // =======================================================
-// 3. ENHANCED PWA INSTALLATION LOGIC WITH FULL APP DOWNLOAD AND CUSTOM INSTALL UI
+          // =======================================================
+// 3. IMPROVED PWA INSTALLATION LOGIC WITH FULL INSTALL FLOW
 // =======================================================
 
-
 function registerPWA() {
+    // Dynamically create and attach manifest
     const manifestContent = {
         name: "AI Trading Bot",
         short_name: "AI Bot",
@@ -1332,34 +1333,40 @@ function registerPWA() {
     const manifestURL = URL.createObjectURL(manifestBlob);
     document.getElementById('pwa-manifest-link').setAttribute('href', manifestURL);
 
+    // Service Worker for full offline caching
     const serviceWorkerCode = `
         const CACHE_NAME = 'ai-trading-bot-v1';
         const urlsToCache = [
             './index.html',
             './',
             'https://cdn.tailwindcss.com',
-            'https://s3.tradingview.com/tv.js'
-            // Add more assets here for full offline experience
+            'https://s3.tradingview.com/tv.js',
+            // Add all static assets required for full offline install here
         ];
+
         self.addEventListener('install', event => {
             self.skipWaiting();
             event.waitUntil(
-                caches.open(CACHE_NAME).then(cache => {
-                    return cache.addAll(urlsToCache);
-                })
+                caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
             );
         });
+
         self.addEventListener('activate', event => {
             event.waitUntil(
-                caches.keys().then(keys => Promise.all(
-                    keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
-                ))
+                caches.keys().then(keys =>
+                    Promise.all(
+                        keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
+                    )
+                )
             );
+            self.clients.claim();
         });
+
         self.addEventListener('fetch', event => {
             event.respondWith(
                 caches.match(event.request).then(response => {
-                    return response || fetch(event.request);
+                    if (response) return response;
+                    return fetch(event.request);
                 })
             );
         });
@@ -1367,142 +1374,102 @@ function registerPWA() {
     const swBlob = new Blob([serviceWorkerCode], { type: 'application/javascript' });
     const swURL = URL.createObjectURL(swBlob);
 
+    // Register Service Worker
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
             navigator.serviceWorker.register(swURL).then(registration => {
-                console.log('ServiceWorker registration successful with scope: ', registration.scope);
-            }, error => {
-                console.error('ServiceWorker registration failed: ', error);
+                console.log('ServiceWorker registered with scope:', registration.scope);
+            }).catch(error => {
+                console.error('ServiceWorker registration failed:', error);
             });
         });
     }
 }
 
+// Improved Install Prompt Logic
 function setupInstallPrompt() {
+    let promptDeferred = null;
     const installPromptContainer = document.getElementById('installPromptContainer');
     const installNowBtn = document.getElementById('pwaInstallNow');
     const installLaterBtn = document.getElementById('pwaInstallLater');
-    const loadingContainer = document.getElementById('installLoadingContainer');
+    const loadingIndicator = document.getElementById('pwaLoadingIndicator');
     const installAppBtn = document.getElementById('installAppBtn');
-    const openNowBtn = document.getElementById('openAppNow');
-    const openLaterBtn = document.getElementById('openAppLater');
 
+    // Show custom install prompt when eligible
     window.addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault();
         promptDeferred = e;
-        if (appState.currentPage === 'landingPage' && !installCompleted) {
-            installPromptContainer.classList.remove('hidden');
-        }
+        installPromptContainer.classList.remove('hidden');
     });
 
+    // Install App button
     installAppBtn.addEventListener('click', () => {
-        if (installCompleted) {
-            showModal('App already installed', 'You can open the app from your device home screen or apps menu.');
-            return;
-        }
         if (promptDeferred) {
             installPromptContainer.classList.remove('hidden');
         } else {
-            showModal('App Install', 'The app is not eligible for installation yet, or is already installed. Try using the browser menu to install.');
+            showModal('App Install', 'This app is already installed or not eligible for installation. Try using your browser menu.');
         }
     });
 
+    // Install Now button logic with loading
     installNowBtn.addEventListener('click', () => {
         installPromptContainer.classList.add('hidden');
-        showLoadingProgress();
         if (promptDeferred) {
+            loadingIndicator.classList.remove('hidden'); // Show "Installing..." loader
             promptDeferred.prompt();
             promptDeferred.userChoice.then((choiceResult) => {
-                if (choiceResult.outcome === 'accepted') {
-                    simulateAppDownload().then(() => {
-                        hideLoadingProgress();
-                        installCompleted = true;
-                        showInstallSuccessPrompt();
-                    });
-                } else {
-                    hideLoadingProgress();
-                    showModal('Info', 'App installation was dismissed.');
-                }
                 promptDeferred = null;
+                if (choiceResult.outcome === 'accepted') {
+                    // Wait for full app cache - simulate with SW 'controllerchange'
+                    navigator.serviceWorker.oncontrollerchange = () => {
+                        loadingIndicator.classList.add('hidden');
+                        showAppInstalledPrompt();
+                    };
+                } else {
+                    loadingIndicator.classList.add('hidden');
+                }
             });
-        } else {
-            hideLoadingProgress();
-            showModal('App Install', 'The app is not eligible for installation yet, or is already installed.');
         }
     });
 
+    // Install Later button
     installLaterBtn.addEventListener('click', () => {
         installPromptContainer.classList.add('hidden');
     });
+}
 
-    if (openNowBtn) {
-        openNowBtn.addEventListener('click', () => {
+// Show "App Installed" modal with Open Now/Later
+function showAppInstalledPrompt() {
+    showModal('App Installed', `
+        The app has been fully installed!<br>
+        <button id="openAppNow" class="btn btn-success">Open now</button>
+        <button id="openAppLater" class="btn btn-secondary">Later</button>
+    `);
+
+    setTimeout(() => {
+        document.getElementById('openAppNow')?.addEventListener('click', () => {
             window.location.href = './index.html';
         });
-    }
-    if (openLaterBtn) {
-        openLaterBtn.addEventListener('click', () => {
-            hideInstallSuccessPrompt();
+        document.getElementById('openAppLater')?.addEventListener('click', () => {
+            closeModal();
         });
-    }
+    }, 100);
 }
 
-// Simulate asset download progress for full PWA install experience
-function simulateAppDownload() {
-    return new Promise((resolve) => {
-        let progress = 0;
-        const progressBar = document.getElementById('installProgressBar');
-        loadingContainer.classList.remove('hidden');
-        function step() {
-            progress += Math.random() * 20 + 10; // Random increment
-            progressBar.style.width = Math.min(progress, 100) + '%';
-            if (progress < 100) {
-                setTimeout(step, 300);
-            } else {
-                loadingContainer.classList.add('hidden');
-                resolve();
-            }
-        }
-        step();
-    });
+// Helper Modal Functions (implement your own as needed)
+function showModal(title, message) {
+    // Implementation of modal logic (showing title, message, and custom actions)
+    alert(`${title}\n\n${message.replace(/<br>/g, '\n')}`);
+}
+function closeModal() {
+    // Hide modal logic if implemented as a custom UI
+    // For alert fallback, do nothing
 }
 
-function showLoadingProgress() {
-    loadingContainer.classList.remove('hidden');
-    const progressBar = document.getElementById('installProgressBar');
-    progressBar.style.width = '0%';
-}
-
-function hideLoadingProgress() {
-    loadingContainer.classList.add('hidden');
-}
-
-function showInstallSuccessPrompt() {
-    const successPrompt = document.getElementById('installSuccessPrompt');
-    if (successPrompt) {
-        successPrompt.classList.remove('hidden');
-    } else {
-        showModal('App Installed', 'The app is now installed! <button id="openAppNow" class="btn">Open now</button> <button id="openAppLater" class="btn">Later</button>');
-        document.getElementById('openAppNow').onclick = () => { window.location.href = './index.html'; };
-        document.getElementById('openAppLater').onclick = () => { hideInstallSuccessPrompt(); };
-    }
-}
-
-function hideInstallSuccessPrompt() {
-    const successPrompt = document.getElementById('installSuccessPrompt');
-    if (successPrompt) successPrompt.classList.add('hidden');
-}
-
-function hideNotification() {
-    document.getElementById('dailyNotification').classList.add('hidden');
-}
-
-// Call these on DOMContentLoaded or window.onload
+// Usage (call on page load)
 registerPWA();
 setupInstallPrompt();
-    
     }
-
         // =======================================================
         // 4. AUTHENTICATION & NAVIGATION
         // =======================================================
