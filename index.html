@@ -1310,103 +1310,177 @@
             return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
         }
 
-        // =======================================================
-        // 3. PWA INSTALLATION LOGIC
-        // =======================================================
+       // ======================
+// REGISTER MANIFEST + SW
+// ======================
+function registerPWA() {
+  const manifestContent = {
+    name: "AI Trading Bot",
+    short_name: "AI Bot",
+    start_url: "./index.html",
+    display: "standalone",
+    orientation: "portrait",
+    background_color: "#000000",
+    theme_color: "#f0b90b",
+    icons: [
+      {
+        src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">💱</text></svg>',
+        sizes: '192x192',
+        type: 'image/svg+xml'
+      },
+      {
+        src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">💱</text></svg>',
+        sizes: '512x512',
+        type: 'image/svg+xml'
+      }
+    ]
+  };
 
-        function registerPWA() {
-            const manifestContent = {
-                name: "AI Trading Bot",
-                short_name: "AI Bot",
-                start_url: "./index.html",
-                display: "standalone",
-                background_color: "#000000",
-                theme_color: "#f0b90b",
-                icons: [
-                    { src: 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💱</text></svg>', sizes: '192x192', type: 'image/svg+xml' },
-                    { src: 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💱</text></svg>', sizes: '512x512', type: 'image/svg+xml' }
-                ]
-            };
-            const manifestBlob = new Blob([JSON.stringify(manifestContent)], { type: 'application/json' });
-            const manifestURL = URL.createObjectURL(manifestBlob);
-            document.getElementById('pwa-manifest-link').setAttribute('href', manifestURL);
+  const manifestBlob = new Blob([JSON.stringify(manifestContent)], { type: 'application/json' });
+  const manifestURL = URL.createObjectURL(manifestBlob);
+  document.getElementById('pwa-manifest-link').setAttribute('href', manifestURL);
 
-            const serviceWorkerCode = `
-                const CACHE_NAME = 'ai-trading-bot-v1';
-                const urlsToCache = ['./index.html', './', 'https://cdn.tailwindcss.com', 'https://s3.tradingview.com/tv.js'];
+  // --- Service Worker for full offline installation ---
+  const serviceWorkerCode = `
+    const CACHE_NAME = 'ai-trading-bot-v2';
+    const urlsToCache = [
+      './index.html', './', 
+      'https://cdn.tailwindcss.com',
+      'https://s3.tradingview.com/tv.js'
+    ];
 
-                self.addEventListener('install', event => {
-                    event.waitUntil(
-                        caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
-                    );
-                });
+    self.addEventListener('install', event => {
+      event.waitUntil(
+        caches.open(CACHE_NAME).then(cache => {
+          return cache.addAll(urlsToCache);
+        }).then(() => self.skipWaiting())
+      );
+    });
 
-                self.addEventListener('fetch', event => {
-                    event.respondWith(
-                        caches.match(event.request).then(response => {
-                            if (response) { return response; }
-                            return fetch(event.request);
-                        })
-                    );
-                });
-            `;
-            const swBlob = new Blob([serviceWorkerCode], { type: 'application/javascript' });
-            const swURL = URL.createObjectURL(swBlob);
+    self.addEventListener('activate', event => {
+      event.waitUntil(self.clients.claim());
+    });
 
-            if ('serviceWorker' in navigator) {
-                window.addEventListener('load', () => {
-                    navigator.serviceWorker.register(swURL).then(registration => {
-                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                    }, error => {
-                        console.error('ServiceWorker registration failed: ', error);
-                    });
-                });
-            }
-        }
+    self.addEventListener('fetch', event => {
+      event.respondWith(
+        caches.match(event.request).then(response => {
+          return response || fetch(event.request);
+        })
+      );
+    });
+  `;
 
-        function setupInstallPrompt() {
-            const installPromptContainer = document.getElementById('installPromptContainer');
-            const installNowBtn = document.getElementById('pwaInstallNow');
-            const installLaterBtn = document.getElementById('pwaInstallLater');
+  const swBlob = new Blob([serviceWorkerCode], { type: 'application/javascript' });
+  const swURL = URL.createObjectURL(swBlob);
 
-            window.addEventListener('beforeinstallprompt', (e) => {
-                e.preventDefault();
-                promptDeferred = e; 
-                if (appState.currentPage === 'landingPage') {
-                    installPromptContainer.classList.remove('hidden');
-                }
-            });
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register(swURL)
+      .then(reg => console.log('✅ Service Worker Registered:', reg.scope))
+      .catch(err => console.error('❌ Service Worker Registration Failed:', err));
+  }
+}
 
-            document.getElementById('installAppBtn').addEventListener('click', () => {
-                if (promptDeferred) {
-                    installPromptContainer.classList.remove('hidden');
-                } else {
-                    showModal('App Install', 'The app is not eligible for installation yet, or is already installed. Try using the browser menu to install.');
-                }
-            });
+// ============================
+// INSTALLATION PROMPT HANDLING
+// ============================
+function setupInstallPrompt() {
+  const installPromptContainer = document.getElementById('installPromptContainer');
+  const installNowBtn = document.getElementById('pwaInstallNow');
+  const installLaterBtn = document.getElementById('pwaInstallLater');
+  const loader = document.getElementById('installLoader');
+  const installAppBtn = document.getElementById('installAppBtn');
 
-            installNowBtn.addEventListener('click', () => {
-                installPromptContainer.classList.add('hidden');
-                if (promptDeferred) {
-                    promptDeferred.prompt();
-                    promptDeferred.userChoice.then((choiceResult) => {
-                        console.log('User choice:', choiceResult.outcome);
-                        promptDeferred = null;
-                        if (choiceResult.outcome === 'accepted') {
-                            showModal('Success', 'App installation started!');
-                        }
-                    });
-                }
-            });
+  // Catch the install prompt
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    promptDeferred = e;
+    installAppBtn.classList.remove('hidden');
+  });
 
-            installLaterBtn.addEventListener('click', () => {
-                installPromptContainer.classList.add('hidden');
-            });
-        }
+  // When Install App button clicked
+  installAppBtn.addEventListener('click', async () => {
+    if (!promptDeferred) {
+      showModal('App Install', 'App cannot be installed right now. Try again or use the browser menu.');
+      return;
+    }
 
-        function hideNotification() {
-            document.getElementById('dailyNotification').classList.add('hidden');
-        }
+    // Show loader while preparing install
+    installPromptContainer.classList.remove('hidden');
+    loader.classList.remove('hidden');
+    loader.innerText = 'Installing... Please wait';
+
+    // Delay to simulate install caching
+    setTimeout(async () => {
+      promptDeferred.prompt();
+
+      const { outcome } = await promptDeferred.userChoice;
+      promptDeferred = null;
+      loader.classList.add('hidden');
+
+      if (outcome === 'accepted') {
+        showModal('Installing', 'App installation started...');
+        setTimeout(() => {
+          installPromptContainer.classList.add('hidden');
+          showInstallCompletePrompt();
+        }, 2000);
+      } else {
+        installPromptContainer.classList.add('hidden');
+      }
+    }, 1000);
+  });
+
+  installNowBtn.addEventListener('click', () => {
+    installPromptContainer.classList.add('hidden');
+    showInstallCompletePrompt();
+  });
+
+  installLaterBtn.addEventListener('click', () => {
+    installPromptContainer.classList.add('hidden');
+  });
+}
+
+// =====================
+// INSTALL COMPLETE PROMPT
+// =====================
+function showInstallCompletePrompt() {
+  const openPrompt = document.createElement('div');
+  openPrompt.className = 'fixed inset-0 bg-black/80 flex flex-col items-center justify-center text-center p-6 text-white z-50';
+  openPrompt.innerHTML = `
+    <div class="bg-gray-900 rounded-2xl p-6 w-80">
+      <h2 class="text-lg font-bold mb-2">App Installed Successfully 🎉</h2>
+      <p class="text-sm mb-4">The app is now available on your device.</p>
+      <button id="openAppNow" class="bg-yellow-500 w-full rounded-lg py-2 font-semibold mb-2">Open Now</button>
+      <button id="openAppLater" class="bg-gray-700 w-full rounded-lg py-2">Later</button>
+    </div>
+  `;
+  document.body.appendChild(openPrompt);
+
+  document.getElementById('openAppNow').addEventListener('click', () => {
+    openPrompt.remove();
+    window.location.href = './index.html';
+  });
+
+  document.getElementById('openAppLater').addEventListener('click', () => {
+    openPrompt.remove();
+  });
+}
+
+// =====================
+// MODAL HELPER FUNCTION
+// =====================
+function showModal(title, message) {
+  const modal = document.createElement('div');
+  modal.className = 'fixed inset-0 bg-black/70 flex items-center justify-center z-50';
+  modal.innerHTML = `
+    <div class="bg-gray-900 text-white p-6 rounded-xl shadow-lg text-center w-80">
+      <h3 class="font-bold text-lg mb-2">${title}</h3>
+      <p class="text-sm mb-4">${message}</p>
+      <button id="closeModalBtn" class="bg-yellow-500 px-4 py-2 rounded-lg font-semibold">OK</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  document.getElementById('closeModalBtn').addEventListener('click', () => modal.remove());
+      }
 
         // =======================================================
         // 4. AUTHENTICATION & NAVIGATION
@@ -1615,23 +1689,34 @@
     if (!container) return;
     container.innerHTML = '';
 
-    new TradingView.widget({  
-        "width": "100%",  
-        "height": "100%",  
-        "symbol": symbol,  
-        "interval": "D",  
-        "timezone": "Etc/UTC",  
-        "theme": "dark",  
-        "style": "1",  
-        "locale": "en",  
-        "toolbar_bg": "#0a0a0a",  
-        "enable_publishing": false,  
-        "hide_side_toolbar": false,  
-        "save_image": false,  
-        "container_id": containerId,  
-        "autosize": true  
-    });  
-}  
+    if (typeof TradingView === 'undefined') {
+                container.innerHTML = `<p class="text-red-400 text-center py-10">TradingView script not loaded.</p>`;
+             return;
+     }
+        new TradingView.widget({
+                "autosize": true,
+                "symbol": symbol,
+                "interval": "D",
+                "timezone": "Etc/UTC",
+                "theme": "dark",
+                "style": "1",
+                "locale": "en",
+                "toolbar_bg": "#16181b",
+                "enable_publishing": false,
+                "hide_side_toolbar": true,
+                "allow_symbol_change": true,
+                "container_id": containerId,
+                "studies": [
+                    "STD;SMA"
+                ],
+                "overrides": {
+                    "paneProperties.background": "#0d0e11",
+                    "paneProperties.vertGridProperties.color": "#2d3035",
+                    "paneProperties.horzGridProperties.color": "#2d3035",
+                    "scalesProperties.textColor": "#a1a1aa",
+                }
+            });
+    }
 
 function showMarketCoinChart(symbol) {  
     const chartContainer = document.getElementById('marketCoinChartContainer');  
