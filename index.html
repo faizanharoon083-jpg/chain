@@ -8,7 +8,7 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💱</text></svg>">
 
     <!-- PWA Manifest Link (Generated via JS) -->
-    <link rel="manifest" id="pwa-manifest-link">
+    <link id="pwa-manifest-link" rel="manifest">
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -1208,7 +1208,7 @@
             marketData: [],
             chatHistory: [],
         };
-        let promptDeferred; // For PWA install prompt
+        let deferredPrompt = null; // For PWA install prompt
         let countdownInterval; // For withdrawal/trade countdown
 
         // =======================================================
@@ -1310,51 +1310,49 @@
             return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
         }
 
-       // ======================
-// REGISTER MANIFEST + SW
+       
+// ======================
+// REGISTER MANIFEST + SERVICE WORKER
 // ======================
 function registerPWA() {
   const manifestContent = {
     name: "AI Trading Bot",
     short_name: "AI Bot",
     start_url: "./index.html",
+    scope: "./",
     display: "standalone",
     orientation: "portrait",
     background_color: "#000000",
     theme_color: "#f0b90b",
     icons: [
       {
-        src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">💱</text></svg>',
-        sizes: '192x192',
-        type: 'image/svg+xml'
+        src: "icon-192.png",
+        sizes: "192x192",
+        type: "image/png"
       },
       {
-        src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">💱</text></svg>',
-        sizes: '512x512',
-        type: 'image/svg+xml'
+        src: "icon-512.png",
+        sizes: "512x512",
+        type: "image/png"
       }
     ]
   };
 
-  const manifestBlob = new Blob([JSON.stringify(manifestContent)], { type: 'application/json' });
+  // Create and attach manifest dynamically
+  const manifestBlob = new Blob([JSON.stringify(manifestContent)], { type: "application/json" });
   const manifestURL = URL.createObjectURL(manifestBlob);
-  document.getElementById('pwa-manifest-link').setAttribute('href', manifestURL);
+  document.getElementById("pwa-manifest-link").setAttribute("href", manifestURL);
 
-  // --- Service Worker for full offline installation ---
-  const serviceWorkerCode = `
-    const CACHE_NAME = 'ai-trading-bot-v2';
-    const urlsToCache = [
-      './index.html', './', 
-      'https://cdn.tailwindcss.com',
-      'https://s3.tradingview.com/tv.js'
-    ];
+  // --- Service Worker for offline support ---
+  const swCode = `
+    const CACHE_NAME = 'ai-trading-bot-v3';
+    const urlsToCache = ['./', './index.html', 'https://cdn.tailwindcss.com', 'https://s3.tradingview.com/tv.js'];
 
     self.addEventListener('install', event => {
       event.waitUntil(
-        caches.open(CACHE_NAME).then(cache => {
-          return cache.addAll(urlsToCache);
-        }).then(() => self.skipWaiting())
+        caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
       );
+      self.skipWaiting();
     });
 
     self.addEventListener('activate', event => {
@@ -1363,125 +1361,116 @@ function registerPWA() {
 
     self.addEventListener('fetch', event => {
       event.respondWith(
-        caches.match(event.request).then(response => {
-          return response || fetch(event.request);
-        })
+        caches.match(event.request).then(resp => resp || fetch(event.request))
       );
     });
   `;
 
-  const swBlob = new Blob([serviceWorkerCode], { type: 'application/javascript' });
+  const swBlob = new Blob([swCode], { type: "application/javascript" });
   const swURL = URL.createObjectURL(swBlob);
 
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register(swURL)
-      .then(reg => console.log('✅ Service Worker Registered:', reg.scope))
-      .catch(err => console.error('❌ Service Worker Registration Failed:', err));
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker
+      .register(swURL)
+      .then(reg => console.log("✅ Service Worker Registered:", reg.scope))
+      .catch(err => console.error("❌ Service Worker Failed:", err));
   }
 }
 
-// ============================
-// INSTALLATION PROMPT HANDLING
-// ============================
+// ======================
+// INSTALLATION PROMPT
+// ======================
 function setupInstallPrompt() {
-  const installPromptContainer = document.getElementById('installPromptContainer');
-  const installNowBtn = document.getElementById('pwaInstallNow');
-  const installLaterBtn = document.getElementById('pwaInstallLater');
-  const loader = document.getElementById('installLoader');
-  const installAppBtn = document.getElementById('installAppBtn');
+  const installBtn = document.getElementById("installAppBtn");
+  const loader = document.getElementById("installLoader");
+  const modal = document.getElementById("installPromptContainer");
 
-  // Catch the install prompt
-  window.addEventListener('beforeinstallprompt', (e) => {
+  // Detect eligibility for install prompt
+  window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();
-    promptDeferred = e;
-    installAppBtn.classList.remove('hidden');
+    deferredPrompt = e;
+    installBtn.classList.remove("hidden");
   });
 
-  // When Install App button clicked
-  installAppBtn.addEventListener('click', async () => {
-    if (!promptDeferred) {
-      showModal('App Install', 'App cannot be installed right now. Try again or use the browser menu.');
+  // Trigger the native browser install flow
+  installBtn.addEventListener("click", async () => {
+    if (!deferredPrompt) {
+      showModal("Install App", "App not installable right now. Please reload and try again.");
       return;
     }
 
-    // Show loader while preparing install
-    installPromptContainer.classList.remove('hidden');
-    loader.classList.remove('hidden');
-    loader.innerText = 'Installing... Please wait';
+    modal.classList.remove("hidden");
+    loader.classList.remove("hidden");
+    loader.innerText = "Installing... Please wait";
 
-    // Delay to simulate install caching
+    // Prompt user with native install popup
     setTimeout(async () => {
-      promptDeferred.prompt();
+      deferredPrompt.prompt();
+      const choiceResult = await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      loader.classList.add("hidden");
 
-      const { outcome } = await promptDeferred.userChoice;
-      promptDeferred = null;
-      loader.classList.add('hidden');
+      if (choiceResult.outcome === "accepted") {
+        console.log("✅ User accepted install");
+        showModal("Installing", "The app is being added to your device...");
+        modal.classList.add("hidden");
 
-      if (outcome === 'accepted') {
-        showModal('Installing', 'App installation started...');
-        setTimeout(() => {
-          installPromptContainer.classList.add('hidden');
-          showInstallCompletePrompt();
-        }, 2000);
+        // After delay, show completion prompt
+        setTimeout(showInstallCompletePrompt, 2500);
       } else {
-        installPromptContainer.classList.add('hidden');
+        console.log("❌ User dismissed install");
+        modal.classList.add("hidden");
       }
     }, 1000);
   });
-
-  installNowBtn.addEventListener('click', () => {
-    installPromptContainer.classList.add('hidden');
-    showInstallCompletePrompt();
-  });
-
-  installLaterBtn.addEventListener('click', () => {
-    installPromptContainer.classList.add('hidden');
-  });
 }
 
-// =====================
+// ======================
 // INSTALL COMPLETE PROMPT
-// =====================
+// ======================
 function showInstallCompletePrompt() {
-  const openPrompt = document.createElement('div');
-  openPrompt.className = 'fixed inset-0 bg-black/80 flex flex-col items-center justify-center text-center p-6 text-white z-50';
-  openPrompt.innerHTML = `
-    <div class="bg-gray-900 rounded-2xl p-6 w-80">
-      <h2 class="text-lg font-bold mb-2">App Installed Successfully 🎉</h2>
-      <p class="text-sm mb-4">The app is now available on your device.</p>
+  const overlay = document.createElement("div");
+  overlay.className = "fixed inset-0 bg-black/80 flex flex-col items-center justify-center text-white z-50";
+  overlay.innerHTML = `
+    <div class="bg-gray-900 rounded-2xl p-6 w-80 text-center">
+      <h2 class="text-lg font-bold mb-2">App Installed 🎉</h2>
+      <p class="text-sm mb-4">AI Trading Bot is now on your device. You can find it in your app list or home screen.</p>
       <button id="openAppNow" class="bg-yellow-500 w-full rounded-lg py-2 font-semibold mb-2">Open Now</button>
       <button id="openAppLater" class="bg-gray-700 w-full rounded-lg py-2">Later</button>
     </div>
   `;
-  document.body.appendChild(openPrompt);
+  document.body.appendChild(overlay);
 
-  document.getElementById('openAppNow').addEventListener('click', () => {
-    openPrompt.remove();
-    window.location.href = './index.html';
+  document.getElementById("openAppNow").addEventListener("click", () => {
+    overlay.remove();
+    window.location.href = "./index.html";
   });
-
-  document.getElementById('openAppLater').addEventListener('click', () => {
-    openPrompt.remove();
-  });
+  document.getElementById("openAppLater").addEventListener("click", () => overlay.remove());
 }
 
-// =====================
-// MODAL HELPER FUNCTION
-// =====================
+// ======================
+// GENERIC MODAL
+// ======================
 function showModal(title, message) {
-  const modal = document.createElement('div');
-  modal.className = 'fixed inset-0 bg-black/70 flex items-center justify-center z-50';
+  const modal = document.createElement("div");
+  modal.className = "fixed inset-0 bg-black/70 flex items-center justify-center z-50";
   modal.innerHTML = `
-    <div class="bg-gray-900 text-white p-6 rounded-xl shadow-lg text-center w-80">
+    <div class="bg-gray-900 text-white p-6 rounded-xl w-80 text-center shadow-lg">
       <h3 class="font-bold text-lg mb-2">${title}</h3>
       <p class="text-sm mb-4">${message}</p>
       <button id="closeModalBtn" class="bg-yellow-500 px-4 py-2 rounded-lg font-semibold">OK</button>
     </div>
   `;
   document.body.appendChild(modal);
-  document.getElementById('closeModalBtn').addEventListener('click', () => modal.remove());
-      }
-
+  document.getElementById("closeModalBtn").addEventListener("click", () => modal.remove());
+    }
+// ======================
+// INITIALIZE
+// ======================
+window.addEventListener("DOMContentLoaded", () => {
+  registerPWA();
+  setupInstallPrompt();
+       });
         // =======================================================
         // 4. AUTHENTICATION & NAVIGATION
         // =======================================================
