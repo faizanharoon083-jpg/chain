@@ -1209,7 +1209,7 @@
             chatHistory: [],
         };
         let promptDeferred = null;
-        let countdownInterval; // For withdrawal/trade countdown
+        let countdownInterval; 
 
         // =======================================================
         // 2. UTILITY FUNCTIONS
@@ -1314,8 +1314,6 @@
 // 3. ENHANCED PWA INSTALLATION LOGIC WITH FULL APP DOWNLOAD AND CUSTOM INSTALL UI
 // =======================================================
 
-let installLoading = false;
-let installCompleted = false;
 
 function registerPWA() {
     const manifestContent = {
